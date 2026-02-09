@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: check-toml # Validasi sintaks pyproject.toml
+      - id: check-yaml # Validasi sintaks .yaml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.1
+    hooks:
+      # Linter & Import Sorter
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      # Formatter
+      - id: ruff-format
+
+  # Export requirements.txt otomatis dari uv.lock
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.0
+    hooks:
+      - id: uv-export
+        args: ["-q", "--frozen", "--no-dev", "--output-file=requirements.txt"]
+      - id: uv-export
+        args:
+          [
+            "-q",
+            "--frozen",
+            "--group=dev",
+            "--output-file=requirements-dev.txt",
+          ]
