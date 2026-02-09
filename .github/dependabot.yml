@@ -1,32 +1,32 @@
 # .github/dependabot.yml
 version: 2
 updates:
-  # Maintain dependencies for Python
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "sunday"
-      time: "03:00"
-      timezone: "Asia/Makassar" # Wita
-    # Grouping: Menggabungkan semua update library python jadi 1 PR
-    groups:
-      python-dependencies:
-        patterns:
-          - "*"
-    # Mengizinkan update pada pyproject.toml dan requirements.txt
-    allow:
-      - dependency-type: "direct"
-      - dependency-type: "production"
-      - dependency-type: "development"
+    # Maintain dependencies for Python
+    - package-ecosystem: "pip"
+      directory: "/"
+      schedule:
+          interval: "weekly"
+          day: "sunday"
+          time: "03:00"
+          timezone: "Asia/Makassar" # Wita
+      # Grouping: Menggabungkan semua update library python jadi 1 PR
+      groups:
+          python-dependencies:
+              patterns:
+                  - "*"
+      # Mengizinkan update pada pyproject.toml dan requirements.txt
+      allow:
+          - dependency-type: "direct"
+          - dependency-type: "production"
+          - dependency-type: "development"
 
-  # Maintain dependencies for GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    # Grouping: Menggabungkan semua update action runner jadi 1 PR
-    groups:
-      github-actions:
-        patterns:
-          - "*"
+    # Maintain dependencies for GitHub Actions
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "monthly"
+      # Grouping: Menggabungkan semua update action runner jadi 1 PR
+      groups:
+          github-actions:
+              patterns:
+                  - "*"

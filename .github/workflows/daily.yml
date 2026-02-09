@@ -1,66 +1,46 @@
-# .github/workflows/daily.yml
 name: Claim Daily Reward
 
 on:
-  schedule:
-    # 03:00 UTC+8 (WITA) = 19:00 UTC (Hari sebelumnya)
-    - cron: "0 19 * * *"
-  workflow_dispatch:
+    schedule:
+        # Jam 21:00 UTC = Jam 05:00 WITA
+        - cron: '0 21 * * *'
+    workflow_dispatch: # Tombol manual untuk tes
 
 jobs:
-  daily-claim:
-    runs-on: ubuntu-latest # Gunakan latest agar selalu update
+    daily-claim:
+        runs-on: ubuntu-latest
 
-    permissions:
-      contents: write # Wajib: Izin untuk git auto commit
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+            - name: Install uv
+              uses: astral-sh/setup-uv@v6
+              with:
+                  enable-cache: true
+                  version: 'latest'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          version: "latest" # Gunakan versi stabil terbaru
+            - name: Set-up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version-file: 'pyproject.toml'
 
-      - name: Set-up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: "pyproject.toml"
+            - name: Install dependencies
+              # Gunakan --frozen untuk memastikan versi library sama persis dengan dev
+              run: uv sync --frozen
 
-      - name: Install the project
-        run: uv sync --frozen # --frozen memastikan menggunakan versi persis di uv.lock
+            - name: Run daily claim script
+              env:
+                  # Secrets Wajib
+                  SECRET_KEY: ${{ secrets.SECRET_KEY }}
+                  COOKIE_API: ${{ secrets.COOKIE_API }}
+                  DC_WH_DAILY: ${{ secrets.DC_WH_DAILY }}
 
-      - name: Run daily claim script
-        env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          COOKIE_API: ${{ secrets.COOKIE_API }}
-          DC_WH_DAILY: ${{ secrets.DC_WH_DAILY }}
-          NO_STARRAIL: ${{ vars.NO_STARRAIL }}
-          NO_HONKAI: ${{ vars.NO_HONKAI }}
-          NO_GENSHIN: ${{ vars.NO_GENSHIN }}
-          NO_TOT: ${{ vars.NO_TOT }}
-          NO_ZZZ: ${{ vars.NO_ZZZ }}
-          LOCALE: ${{ vars.LOCALE }}
-        run: uv run daily.py
-
-      - name: Run daily redeem script
-        env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          COOKIE_API: ${{ secrets.COOKIE_API }}
-          DC_WH_CODE: ${{ secrets.DC_WH_CODE }}
-          NO_STARRAIL: ${{ vars.NO_STARRAIL }}
-          NO_HONKAI: ${{ vars.NO_HONKAI }}
-          NO_GENSHIN: ${{ vars.NO_GENSHIN }}
-          NO_TOT: ${{ vars.NO_TOT }}
-          NO_ZZZ: ${{ vars.NO_ZZZ }}
-          LOCALE: ${{ vars.LOCALE }}
-        run: uv run redeem.py -a
-
-      # Commit perubahan pada folder 'used/' jika ada kode baru yang di-redeem
-      - name: Commit and push changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore(data): update used codes history [skip ci]"
-          file_pattern: "used/*.txt"
+                  # Variables Opsional
+                  LOCALE: ${{ vars.LOCALE }}
+                  NO_GENSHIN: ${{ vars.NO_GENSHIN }}
+                  NO_STARRAIL: ${{ vars.NO_STARRAIL }}
+                  NO_ZZZ: ${{ vars.NO_ZZZ }}
+                  NO_HONKAI: ${{ vars.NO_HONKAI }}
+                  NO_TOT: ${{ vars.NO_TOT }}
+              run: uv run daily.py
