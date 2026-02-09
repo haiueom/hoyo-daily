@@ -1,99 +1,80 @@
 name: Auto Redeem Codes
 
 on:
-  schedule:
-    # Jalan setiap 12 jam (Jam 08:00 dan 20:00 WITA)
-    - cron: "0 */12 * * *"
+    schedule:
+        - cron: '0 3 * * *'
 
-  # Opsi Manual Trigger dengan Input
-  workflow_dispatch:
-    inputs:
-      auto:
-        description: 'Auto Fetch Mode (-a)'
-        required: true
-        default: true
-        type: boolean
-      force:
-        description: 'Force Redeem (-f) - Cek ulang kode used'
-        required: true
-        default: false
-        type: boolean
-      manual_args:
-        description: 'Manual Codes (Opsional, cth: -gi CODE1 -sr CODE2)'
-        required: false
-        type: string
+    workflow_dispatch:
+        inputs:
+            auto:
+                description: 'Auto Fetch Mode (-a)'
+                required: true
+                default: true
+                type: boolean
+            force:
+                description: 'Force Redeem (-f)'
+                required: true
+                default: false
+                type: boolean
+            manual_args:
+                description: 'Manual Codes (Opsional)'
+                required: false
+                type: string
 
 jobs:
-  redeem-codes:
-    runs-on: ubuntu-latest
+    redeem-codes:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
 
-    permissions:
-      contents: write # Wajib untuk commit update used codes
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+            - name: Install uv
+              uses: astral-sh/setup-uv@v6
+              with:
+                  enable-cache: true
+                  version: 'latest'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          version: "latest"
+            - name: Set-up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version-file: 'pyproject.toml'
 
-      - name: Set-up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: "pyproject.toml"
+            - name: Install dependencies
+              run: uv sync --frozen
 
-      - name: Install dependencies
-        run: uv sync --frozen
+            - name: Run redeem script
+              env:
+                  SECRET_KEY: ${{ secrets.SECRET_KEY }}
+                  COOKIE_API: ${{ secrets.COOKIE_API }}
+                  DC_WH_CODE: ${{ secrets.DC_WH_CODE }}
+                  # --- KONFIGURASI PENTING ---
+                  # Mengambil dari Variable GitHub, jika tidak ada default ke 5 (di setting python)
+                  MAX_PARALLEL: ${{ vars.MAX_PARALLEL }}
+                  LOCALE: ${{ vars.LOCALE }}
+                  NO_GENSHIN: ${{ vars.NO_GENSHIN }}
+                  NO_STARRAIL: ${{ vars.NO_STARRAIL }}
+                  NO_ZZZ: ${{ vars.NO_ZZZ }}
+                  NO_HONKAI: ${{ vars.NO_HONKAI }}
+                  NO_TOT: ${{ vars.NO_TOT }}
+              run: |
+                  ARGS=""
+                  if [ "${{ github.event_name }}" == "schedule" ]; then
+                    ARGS="-a"
+                    echo "📅 Scheduled Run: Auto Mode"
+                  else
+                    if [ "${{ inputs.auto }}" == "true" ]; then ARGS="$ARGS -a"; fi
+                    if [ "${{ inputs.force }}" == "true" ]; then ARGS="$ARGS -f"; fi
+                    if [ -n "${{ inputs.manual_args }}" ]; then ARGS="$ARGS ${{ inputs.manual_args }}"; fi
+                    echo "👤 Manual Run: Args = $ARGS"
+                  fi
 
-      - name: Run redeem script
-        env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
-          COOKIE_API: ${{ secrets.COOKIE_API }}
-          DC_WH_CODE: ${{ secrets.DC_WH_CODE }}
-          LOCALE: ${{ vars.LOCALE }}
-          NO_GENSHIN: ${{ vars.NO_GENSHIN }}
-          NO_STARRAIL: ${{ vars.NO_STARRAIL }}
-          NO_ZZZ: ${{ vars.NO_ZZZ }}
-          NO_HONKAI: ${{ vars.NO_HONKAI }}
-          NO_TOT: ${{ vars.NO_TOT }}
-        run: |
-          # Default Arguments (Kosong)
-          ARGS=""
+                  uv run redeem.py $ARGS
 
-          # Logic: Tentukan argument berdasarkan Event Trigger
-          if [ "${{ github.event_name }}" == "schedule" ]; then
-            # Jika jalan otomatis (Jadwal), selalu gunakan mode Auto (-a)
-            ARGS="-a"
-            echo "📅 Scheduled Run: Activating Auto Mode"
-          else
-            # Jika jalan manual (Workflow Dispatch), baca input user
-            if [ "${{ inputs.auto }}" == "true" ]; then
-              ARGS="$ARGS -a"
-            fi
-
-            if [ "${{ inputs.force }}" == "true" ]; then
-              ARGS="$ARGS -f"
-              echo "⚠️ Force Mode Activated"
-            fi
-
-            # Tambahkan manual code jika diisi
-            if [ -n "${{ inputs.manual_args }}" ]; then
-              ARGS="$ARGS ${{ inputs.manual_args }}"
-            fi
-
-            echo "👤 Manual Run: Args = $ARGS"
-          fi
-
-          # Eksekusi Script
-          # Jika ARGS kosong (misal Auto mati & Manual kosong), script redeem.py akan handle (exit gracefully)
-          uv run redeem.py $ARGS
-
-      # Commit perubahan file used/ jika ada
-      - name: Commit used codes history
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore(data): update used codes history [skip ci]"
-          file_pattern: "used/*.txt"
+            - name: Commit used codes history
+              uses: stefanzweifel/git-auto-commit-action@v5
+              with:
+                  commit_message: 'chore(data): update used codes history [skip ci]'
+                  file_pattern: 'used/*.txt'
