@@ -41,7 +41,7 @@ class Settings(BaseSettings):
 
     # Webhooks
     DC_WH_DAILY: str = ""
-    DC_WH_CODE: str = ""
+    DC_WH_REDEEM: str = ""
 
     # Feature Flags
     NO_GENSHIN: bool = False

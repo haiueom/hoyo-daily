@@ -169,7 +169,7 @@ async def main():
 
             if has_activity:
                 send_discord_embed(
-                    settings.DC_WH_CODE, f"Redeem: {name}", msg, "00ffff"
+                    settings.DC_WH_REDEEM, f"Redeem: {name}", msg, "00ffff"
                 )
 
             update_used_codes(key, codes)
