@@ -13,3 +13,36 @@ dependencies = [
     "requests>=2.32.5",
     "rich>=14.3.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.15.0",
+]
+
+[tool.ruff]
+# Target version sesuai requires-python
+target-version = "py313"
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+# Enable rules:
+# E: pycodestyle errors
+# W: pycodestyle warnings
+# F: pyflakes
+# I: isort (Wajib untuk sorting imports)
+# B: flake8-bugbear (Menemukan bug umum)
+# UP: pyupgrade (Upgrade syntax lama ke python 3.13)
+# SIM: flake8-simplify (Menyederhanakan kode)
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501", "E701"] # Biarkan ruff-format yang menangani line length
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

@@ -1,65 +1,142 @@
-# redeem.py
 import argparse
 import asyncio
-from utils import (
-    censor_uid, check_lang, create_genshin_client, fix_asyncio_windows_error,
-    get_cookies_from_api, get_active_codes, update_used_codes,
-    send_discord_embed, settings, console, log, RedeemInfo
-)
+
 import genshin
 from rich.table import Table
+
+from utils import (
+    RedeemInfo,
+    check_lang,
+    console,
+    create_genshin_client,
+    fix_asyncio_windows_error,
+    get_active_codes,
+    get_cookies_from_api,
+    get_used_codes,
+    log,
+    send_discord_embed,
+    settings,
+    update_used_codes,
+)
+
 
 async def redeem_single(client, code, uid):
     try:
         await client.redeem_code(code, uid=uid)
         return "✅"
-    except genshin.RedemptionClaimed: return "🟡"
-    except genshin.RedemptionInvalid: return "☠"
-    except genshin.RedemptionCooldown: return "⏱"
-    except Exception: return "❌"
+    except genshin.RedemptionClaimed:
+        return "🟡"
+    except genshin.RedemptionInvalid:
+        return "☠"
+    except genshin.RedemptionCooldown:
+        return "⏱"
+    except genshin.RedemptionException as e:
+        # Menangkap error spesifik redemption lainnya
+        log.debug(f"Redemption Error ({code}): {e}")
+        return "❌"
+    except Exception as e:
+        log.debug(f"Unknown Error ({code}): {e}")
+        return "ERR"
+
 
 async def process_game(cookies, lang, game, codes, name):
     results = []
+
+    # Kelompokkan tasks agar tidak spam request sekaligus
+    # Batch processing: proses 1 kode untuk semua akun, lalu jeda
+
     for code in codes:
-        # Proses 1 kode untuk semua akun (Paralel)
-        tasks = []
+        code_tasks = []
         for cookie in cookies:
             client, _ = await create_genshin_client(cookie, lang, game)
             if not client:
-                results.append(RedeemInfo(env_name=cookie.env_name, code=code, status="Cookie Err"))
+                results.append(
+                    RedeemInfo(env_name=cookie.env_name, code=code, status="Cookie Err")
+                )
                 continue
 
             try:
                 accs = await client.get_game_accounts()
                 target = next((a for a in accs if a.game == game), None)
-                if not target: continue
+                if not target:
+                    continue
 
-                status = await redeem_single(client, code, target.uid)
-                results.append(RedeemInfo(target.uid, code, status, True, cookie.env_name))
-            except: pass
+                # Buat task untuk redeem
+                task = redeem_single(client, code, target.uid)
+                code_tasks.append((cookie.env_name, code, task))
+            except Exception:
+                pass
 
-        await asyncio.sleep(5) # Delay 5 detik antar kode
+        # Eksekusi semua akun untuk 1 kode ini
+        if code_tasks:
+            # Unpack task
+            env_names, codes_list, tasks = zip(*code_tasks, strict=True)
+            statuses = await asyncio.gather(*tasks)
+
+            for env, c, s in zip(env_names, codes_list, statuses, strict=True):
+                # Hanya masukkan ke result jika sukses atau cooldown/invalid
+                # Ignore jika error tak dikenal agar report tidak penuh sampah
+                results.append(
+                    RedeemInfo(
+                        uid="*", code=c, status=s, success=(s == "✅"), env_name=env
+                    )
+                )
+
+        # Jeda antar kode untuk menghindari rate limit IP
+        if len(codes) > 1:
+            await asyncio.sleep(5)
+
     return results
+
 
 async def main():
     fix_asyncio_windows_error()
     parser = argparse.ArgumentParser()
-    parser.add_argument("-a", "--auto", action="store_true", help="Ambil kode aktif dari repo")
+    parser.add_argument(
+        "-a", "--auto", action="store_true", help="Ambil kode aktif dari repo"
+    )
+    parser.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Paksa cek ulang kode yang sudah 'used' (Gunakan jika ada akun baru)",
+    )
     parser.add_argument("-gi", nargs="*", default=[])
     parser.add_argument("-sr", nargs="*", default=[])
     parser.add_argument("-zz", nargs="*", default=[])
     args = parser.parse_args()
 
+    # 1. Kumpulkan kode manual
     codes_map = {"gi": set(args.gi), "sr": set(args.sr), "zz": set(args.zz)}
+
+    # 2. Logic Auto Fetch
     if args.auto:
         active = get_active_codes()
-        for k in codes_map: codes_map[k].update(active.get(k, []))
 
-    # Cek file used (sederhana) - bisa dikembangkan lagi
-    # Di sini kita redeem saja, system genshin akan tolak jika sudah redeem
+        # Jika --force aktif, kita anggap used list kosong (ignore history)
+        if args.force:
+            log.info(
+                "[FORCE] Mengabaikan history used codes. Semua kode aktif akan dicoba."
+            )
+            used = {k: set() for k in active}
+        else:
+            used = get_used_codes()
+
+        # Gabungkan kode: (Manual + (Active - Used))
+        for k in codes_map:
+            new_codes = set(active.get(k, [])) - used.get(k, set())
+            codes_map[k].update(new_codes)
+
+    # Filter yang kosong
+    codes_map = {k: list(v) for k, v in codes_map.items() if v}
+
+    if not any(codes_map.values()):
+        log.info("Tidak ada kode baru untuk di-redeem.")
+        return
 
     cookies = get_cookies_from_api()
-    if not cookies: return log.error("No Cookies.")
+    if not cookies:
+        return log.error("No Cookies.")
 
     config = {
         "gi": (genshin.Game.GENSHIN, "Genshin", settings.NO_GENSHIN),
@@ -67,25 +144,54 @@ async def main():
         "zz": (genshin.Game.ZZZ, "ZZZ", settings.NO_ZZZ),
     }
 
-    for key, codes in codes_map.items():
-        if not codes: continue
-        game, name, disabled = config[key]
-        if disabled: continue
+    lang = check_lang(settings.LOCALE)
 
-        log.info(f"[{name}] Redeem: {codes}")
-        res = await process_game(cookies, check_lang(settings.LOCALE), game, list(codes), name)
+    for key, codes in codes_map.items():
+        if not codes:
+            continue
+        game, name, disabled = config[key]
+        if disabled:
+            continue
+
+        log.info(f"[{name}] Processing {len(codes)} Codes...")
+        res = await process_game(cookies, lang, game, codes, name)
 
         if res:
+            # Tampilkan Tabel
             table = Table(title=f"🎁 {name}")
-            table.add_column("Akun"); table.add_column("Kode"); table.add_column("Status")
+            table.add_column("Akun")
+            table.add_column("Kode")
+            table.add_column("Status")
+
+            # Siapkan pesan Discord
             msg = "```\n"
+            has_activity = False
+
             for r in res:
                 table.add_row(r.env_name, r.code, r.status)
-                msg += f"{r.status} {r.code} ({r.env_name})\n"
+
+                # Hanya notif discord jika statusnya penting
+                if r.status in ["✅", "☠", "rules", "Cookie Err"]:
+                    msg += f"{r.status} {r.code} ({r.env_name})\n"
+                    has_activity = True
+                elif r.status == "🟡" and args.force:
+                    # Jika force mode, info "Already Claimed" mungkin spam, opsional ditampilkan
+                    pass
+
             msg += "```"
+
             console.print(table)
-            send_discord_embed(settings.DC_WH_CODE, f"Redeem: {name}", msg, "00ffff")
-            update_used_codes(key, list(codes))
+
+            # Kirim webhook hanya jika ada aktivitas penting (sukses/invalid)
+            # Jangan kirim jika isinya cuma "Already Claimed" semua (biasa terjadi saat --force)
+            if has_activity:
+                send_discord_embed(
+                    settings.DC_WH_CODE, f"Redeem: {name}", msg, "00ffff"
+                )
+
+            # Selalu update used codes agar run berikutnya (tanpa force) lebih cepat
+            update_used_codes(key, codes)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

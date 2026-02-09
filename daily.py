@@ -1,15 +1,26 @@
 import asyncio
 from datetime import datetime
+
 import genshin
+from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
-from rich.console import Group
 
 from utils import (
-    CookieInfo, DailyInfo, censor_uid, check_lang, create_genshin_client,
-    fix_asyncio_windows_error, get_cookies_from_api, get_days_of_month,
-    send_discord_embed, settings, console, log
+    CookieInfo,
+    DailyInfo,
+    censor_uid,
+    check_lang,
+    console,
+    create_genshin_client,
+    fix_asyncio_windows_error,
+    get_cookies_from_api,
+    get_days_of_month,
+    log,
+    send_discord_embed,
+    settings,
 )
+
 
 class DailyClaimer:
     def __init__(self, game: genshin.Game):
@@ -36,7 +47,7 @@ class DailyClaimer:
             except genshin.AlreadyClaimed:
                 info.status = "🟡"
             except genshin.GenshinException as e:
-                if e.retcode == -10002: # Karakter belum dibuat/server salah
+                if e.retcode == -10002:  # Karakter belum dibuat/server salah
                     info.status = "no_account"
                     return info
                 log.warning(f"[{display_name}] Gagal klaim: {e}")
@@ -76,6 +87,7 @@ class DailyClaimer:
 
         return info
 
+
 async def main():
     fix_asyncio_windows_error()
     cookies = get_cookies_from_api()
@@ -96,7 +108,8 @@ async def main():
     # Eksekusi Paralel menggunakan TaskGroup
     async with asyncio.TaskGroup() as tg:
         for name, (game, disabled) in games.items():
-            if disabled: continue
+            if disabled:
+                continue
 
             claimer = DailyClaimer(game)
             # Buat list task untuk setiap cookie per game
@@ -111,12 +124,13 @@ async def main():
 
         # Hanya tampilkan tabel jika ada setidaknya satu akun yang sukses/terdeteksi
         valid_infos = [i for i in infos if i.status != "no_account"]
-        if not valid_infos: continue
+        if not valid_infos:
+            continue
 
         table = Table(title=f"🎮 {name}", expand=True)
         table.add_column("Akun", style="cyan")
         table.add_column("UID", style="dim")
-        table.add_column("Hari", justify="center", style="magenta") # Kolom Hari
+        table.add_column("Hari", justify="center", style="magenta")  # Kolom Hari
         table.add_column("Status", justify="center")
         table.add_column("Reward", style="green", justify="right")
 
@@ -127,7 +141,9 @@ async def main():
 
             # Format pesan Discord
             if i.status in ["✅", "🟡"]:
-                msg += f"{i.status} {i.env_name} (Hari {i.check_in_count}): {i.reward}\n"
+                msg += (
+                    f"{i.status} {i.env_name} (Hari {i.check_in_count}): {i.reward}\n"
+                )
             else:
                 msg += f"{i.status} {i.env_name}: {i.status}\n"
 
@@ -138,16 +154,16 @@ async def main():
         # Kirim Webhook
         if settings.DC_WH_DAILY:
             send_discord_embed(
-                settings.DC_WH_DAILY,
-                f"Daily Check-In - {name}",
-                msg,
-                color="00ff00"
+                settings.DC_WH_DAILY, f"Daily Check-In - {name}", msg, color="00ff00"
             )
 
     if rich_output:
         console.print(Panel(Group(*rich_output), title=f"Daily Report - {timestamp}"))
     else:
-        console.print("[yellow]Tidak ada aktivitas daily yang berhasil dijalankan.[/yellow]")
+        console.print(
+            "[yellow]Tidak ada aktivitas daily yang berhasil dijalankan.[/yellow]"
+        )
+
 
 if __name__ == "__main__":
     asyncio.run(main())

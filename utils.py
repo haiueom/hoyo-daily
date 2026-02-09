@@ -1,10 +1,10 @@
 import asyncio
-import sys
 import logging
 import os
+import sys
 from calendar import monthrange
 from dataclasses import dataclass
-from typing import Literal
+from datetime import datetime  # Dipindahkan ke atas (Fix E402)
 from re import sub
 
 import genshin
@@ -24,9 +24,12 @@ logging.basicConfig(
 log = logging.getLogger("rich")
 console = Console()
 
+
 # --- Configuration Management (Pydantic) ---
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # App Config
     LOCALE: str = "en-us"
@@ -47,7 +50,9 @@ class Settings(BaseSettings):
     NO_HONKAI: bool = False
     NO_TOT: bool = False
 
+
 settings = Settings()
+
 
 # --- Data Structures ---
 @dataclass
@@ -57,6 +62,7 @@ class CookieInfo:
 
     def get(self) -> str | dict:
         return self.cookies
+
 
 @dataclass
 class DailyInfo:
@@ -70,6 +76,7 @@ class DailyInfo:
     success: bool = False
     env_name: str = "❓"
 
+
 @dataclass
 class RedeemInfo:
     uid: str = "❓"
@@ -81,33 +88,54 @@ class RedeemInfo:
     success: bool = False
     env_name: str = "❓"
 
+
 # --- Helper Functions ---
 def check_lang(lang: str) -> str:
-    valid = {"zh-cn", "zh-tw", "de-de", "en-us", "es-es", "fr-fr", "id-id", "ja-jp", "ko-kr", "pt-pt", "ru-ru", "th-th", "vi-vn"}
+    valid = {
+        "zh-cn",
+        "zh-tw",
+        "de-de",
+        "en-us",
+        "es-es",
+        "fr-fr",
+        "id-id",
+        "ja-jp",
+        "ko-kr",
+        "pt-pt",
+        "ru-ru",
+        "th-th",
+        "vi-vn",
+    }
     lang = lang.lower()
     if lang not in valid:
         log.warning(f"[LANGUAGE] '{lang}' not supported. Using 'en-us'.")
         return "en-us"
     return lang
 
+
 def censor_uid(uid: int | str) -> str:
     s = str(uid)
     return s[:-6] + "■■■■■" + s[-1] if len(s) >= 6 else s
+
 
 def format_name(name: str) -> str:
     # Ganti karakter non-alphanumeric (kecuali awal/akhir) dengan underscore
     name = sub(r"(?<!^)\W+(?!$)", "_", name)
     return name.upper()
 
+
 def fix_asyncio_windows_error() -> None:
     if sys.version_info >= (3, 8) and sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 def get_days_of_month() -> int:
     now = datetime.now()
     return monthrange(now.year, now.month)[1]
 
+
 # --- Core Logic ---
+
 
 def get_cookies_from_api() -> list[CookieInfo]:
     """
@@ -123,14 +151,16 @@ def get_cookies_from_api() -> list[CookieInfo]:
         response = requests.get(
             settings.COOKIE_API,
             headers={"Authorization": f"Bearer {settings.SECRET_KEY}"},
-            timeout=15
+            timeout=15,
         )
         response.raise_for_status()
         resp_json = response.json()
 
         # Cek flag success dari ApiResponse
         if not resp_json.get("success", False):
-            log.error(f"[COOKIE] API Error: {resp_json.get('message', 'Unknown error')}")
+            log.error(
+                f"[COOKIE] API Error: {resp_json.get('message', 'Unknown error')}"
+            )
             return []
 
         data = resp_json.get("data", [])
@@ -163,20 +193,25 @@ def get_cookies_from_api() -> list[CookieInfo]:
 
     return sorted(cookies, key=lambda x: x.env_name)
 
-async def create_genshin_client(cookie: CookieInfo, lang: str, game: genshin.Game) -> tuple[genshin.Client | None, str | None]:
+
+async def create_genshin_client(
+    cookie: CookieInfo, lang: str, game: genshin.Game
+) -> tuple[genshin.Client | None, str | None]:
     """Factory function untuk membuat client Genshin yang aman."""
     try:
-        # complete_cookies memastikan ltoken/ltuid ada jika diperlukan,
-        # tapi untuk v2 (account_id_v2) biasanya langsung bisa dipakai.
         cookies = await genshin.complete_cookies(cookies=cookie.get())
         client = genshin.Client(cookies=cookies, lang=lang, game=game)
         return client, None
     except Exception as e:
         return None, str(e)
 
-def send_discord_embed(webhook_url: str, title: str, msg: str, color: str = "00ff00") -> None:
+
+def send_discord_embed(
+    webhook_url: str, title: str, msg: str, color: str = "00ff00"
+) -> None:
     """Mengirim notifikasi ke Discord (Unified)."""
-    if not webhook_url: return
+    if not webhook_url:
+        return
     try:
         webhook = DiscordWebhook(url=webhook_url)
         embed = DiscordEmbed(title=title, description=msg, color=color)
@@ -187,11 +222,12 @@ def send_discord_embed(webhook_url: str, title: str, msg: str, color: str = "00f
     except Exception as e:
         log.error(f"[DISCORD] Gagal mengirim webhook: {e}")
 
+
 # --- Code Logic ---
-from datetime import datetime
 
 GITHUB_RAW_URL = "https://github.com/haiueom/hoyo-code/raw/refs/heads/main/"
 GAME_MAP = {"genshin": "gi", "starrail": "sr", "zzz": "zz"}
+
 
 def get_active_codes() -> dict[str, list[str]]:
     active = {v: [] for v in GAME_MAP.values()}
@@ -200,37 +236,45 @@ def get_active_codes() -> dict[str, list[str]]:
             r = requests.get(f"{GITHUB_RAW_URL}{path}/active.json", timeout=10)
             if r.ok:
                 data = r.json()
-                # Handle jika format active.json berupa list of dict atau list of string
                 if isinstance(data, list):
                     if data and isinstance(data[0], dict):
-                         active[key] = [i["code"] for i in data if "code" in i]
+                        active[key] = [i["code"] for i in data if "code" in i]
                     else:
-                         active[key] = data
+                        active[key] = data
         except Exception as e:
             log.warning(f"[CODES] Gagal fetch kode {path}: {e}")
     return active
+
 
 def get_used_codes() -> dict[str, set[str]]:
     used = {v: set() for v in GAME_MAP.values()}
     for path_key, game_key in GAME_MAP.items():
         try:
             if os.path.exists(f"used/{path_key}.txt"):
-                with open(f"used/{path_key}.txt", "r", encoding="utf-8") as f:
+                with open(f"used/{path_key}.txt", encoding="utf-8") as f:
                     used[game_key] = set(f.read().splitlines())
-        except Exception: pass
+        except Exception:
+            pass
     return used
+
 
 def update_used_codes(game_key: str, codes: list[str]):
     path_key = next((k for k, v in GAME_MAP.items() if v == game_key), None)
-    if not path_key: return
+    if not path_key:
+        return
     try:
         os.makedirs("used", exist_ok=True)
         with open(f"used/{path_key}.txt", "a", encoding="utf-8") as f:
-            for c in codes: f.write(f"{c}\n")
-    except Exception as e: log.error(f"Gagal update used codes: {e}")
+            for c in codes:
+                f.write(f"{c}\n")
+    except Exception as e:
+        log.error(f"Gagal update used codes: {e}")
+
 
 def reset_used_files():
-    for game_path in GAME_MAP.keys():
+    for game_path in GAME_MAP:
         try:
-            with open(f"used/{game_path}.txt", "w", encoding="utf-8") as f: f.write("")
-        except: pass
+            with open(f"used/{game_path}.txt", "w", encoding="utf-8") as f:
+                f.write("")
+        except Exception:  # Fix E722 (Bare except)
+            pass
